@@ -338,4 +338,11 @@ mod test {
         assert_eq!(typ.child_name(1), "world");
         assert_eq!(typ.child(1).id(), LogicalTypeId::Integer);
     }
+
+    #[test]
+    fn test_list_type() {
+        let typ = LogicalTypeHandle::list(&LogicalTypeHandle::from(LogicalTypeId::Integer));
+        assert_eq!(typ.num_children(), 1);
+        assert_eq!(typ.child(0).id(), LogicalTypeId::Integer);
+    }
 }

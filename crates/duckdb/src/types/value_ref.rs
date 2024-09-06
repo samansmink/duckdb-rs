@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use super::{Type, Value};
 use crate::types::{FromSqlError, FromSqlResult, OrderedMap};
 
@@ -351,7 +353,104 @@ impl<'a> From<&'a Value> for ValueRef<'a> {
             Value::Time64(t, d) => ValueRef::Time64(t, d),
             Value::Interval { months, days, nanos } => ValueRef::Interval { months, days, nanos },
             Value::Enum(..) => todo!(),
-            Value::List(..) | Value::Struct(..) | Value::Map(..) | Value::Array(..) | Value::Union(..) => {
+            Value::Array(ref vec) => {
+                let len = vec.len();
+                if len == 0 {
+                    return ValueRef::Null; // Empty array, return Null
+                }
+
+                // Determine the type from the first element
+                let array_type = vec[0].data_type();
+
+                let arrow_type = match array_type {
+                    Type::Boolean => arrow::datatypes::DataType::Boolean,
+                    Type::TinyInt => arrow::datatypes::DataType::Int8,
+                    Type::SmallInt => arrow::datatypes::DataType::Int16,
+                    Type::Int => arrow::datatypes::DataType::Int32,
+                    Type::BigInt => arrow::datatypes::DataType::Int64,
+                    Type::Float => arrow::datatypes::DataType::Float32,
+                    Type::Double => arrow::datatypes::DataType::Float64,
+                    Type::Text => arrow::datatypes::DataType::Utf8,
+                    _ => panic!("Unsupported type in Array"),
+                };
+                let array_data = match array_type {
+                    Type::Boolean => {
+                        let mut builder = arrow::array::BooleanBuilder::new();
+                        vec.iter().for_each(|v| match v {
+                            Value::Boolean(b) => builder.append_value(*b),
+                            _ => panic!("Invalid type in Array"),
+                        });
+                        builder.finish().to_data()
+                    }
+                    Type::TinyInt => {
+                        let mut builder = arrow::array::Int8Builder::new();
+                        vec.iter().for_each(|v| match v {
+                            Value::TinyInt(i) => builder.append_value(*i),
+                            _ => panic!("Invalid type in Array"),
+                        });
+                        builder.finish().to_data()
+                    }
+                    Type::SmallInt => {
+                        let mut builder = arrow::array::Int16Builder::new();
+                        vec.iter().for_each(|v| match v {
+                            Value::SmallInt(i) => builder.append_value(*i),
+                            _ => panic!("Invalid type in Array"),
+                        });
+                        builder.finish().to_data()
+                    }
+                    Type::Int => {
+                        let mut builder = arrow::array::Int32Builder::new();
+                        vec.iter().for_each(|v| match v {
+                            Value::Int(i) => builder.append_value(*i),
+                            _ => panic!("Invalid type in Array"),
+                        });
+                        builder.finish().to_data()
+                    }
+                    Type::BigInt => {
+                        let mut builder = arrow::array::Int64Builder::new();
+                        vec.iter().for_each(|v| match v {
+                            Value::BigInt(i) => builder.append_value(*i),
+                            _ => panic!("Invalid type in Array"),
+                        });
+                        builder.finish().to_data()
+                    }
+                    Type::Float => {
+                        let mut builder = arrow::array::Float32Builder::new();
+                        vec.iter().for_each(|v| match v {
+                            Value::Float(f) => builder.append_value(*f),
+                            _ => panic!("Invalid type in Array"),
+                        });
+                        builder.finish().to_data()
+                    }
+                    Type::Double => {
+                        let mut builder = arrow::array::Float64Builder::new();
+                        vec.iter().for_each(|v| match v {
+                            Value::Double(d) => builder.append_value(*d),
+                            _ => panic!("Invalid type in Array"),
+                        });
+                        builder.finish().to_data()
+                    }
+                    Type::Text => {
+                        let mut builder = arrow::array::StringBuilder::new();
+                        vec.iter().for_each(|v| match v {
+                            Value::Text(s) => builder.append_value(s),
+                            _ => panic!("Invalid type in Array"),
+                        });
+                        builder.finish().to_data()
+                    }
+                    _ => panic!("Unsupported type in Array"),
+                };
+                let array = FixedSizeListArray::try_new(
+                    Arc::new(arrow::datatypes::Field::new("item", arrow_type, false)),
+                    len.try_into().unwrap(),
+                    Arc::new(arrow::array::make_array(array_data)),
+                    None,
+                )
+                .unwrap();
+
+                ValueRef::Array(Box::leak(Box::new(array)), len)
+            }
+            Value::List(..) | Value::Struct(..) | Value::Map(..) | Value::Union(..) => {
                 unimplemented!()
             }
         }
