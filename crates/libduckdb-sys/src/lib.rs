@@ -8,6 +8,8 @@
 mod bindings {
     include!(concat!(env!("OUT_DIR"), "/bindgen.rs"));
 }
+use std::slice;
+
 #[allow(clippy::all)]
 pub use bindings::*;
 
@@ -17,7 +19,6 @@ pub use string::*;
 pub const DuckDBError: duckdb_state = duckdb_state_DuckDBError;
 pub const DuckDBSuccess: duckdb_state = duckdb_state_DuckDBSuccess;
 
-use std::slice;
 impl From<&duckdb_string_t> for String {
     fn from(source: &duckdb_string_t) -> String {
         unsafe {
@@ -34,6 +35,25 @@ impl From<&duckdb_string_t> for String {
         }
     }
 }
+impl From<&duckdb_string_t> for DuckDbString {
+    fn from(source: &duckdb_string_t) -> DuckDbString {
+        unsafe {
+            let s = if source.value.inlined.length <= 12 {
+                source.value.inlined.inlined.as_ptr()
+            } else {
+                source.value.pointer.ptr
+            };
+            return DuckDbString::from_raw_parts(s, source.value.inlined.length as usize);
+        }
+    }
+}
+
+impl From<&DuckDbString> for String {
+    fn from(source: &DuckDbString) -> String {
+        source.to_string_lossy().to_string()
+    }
+}
+
 pub use self::error::*;
 mod error;
 

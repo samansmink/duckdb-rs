@@ -1,6 +1,8 @@
 use std::{any::Any, ffi::CString, slice};
 
-use libduckdb_sys::{duckdb_array_type_array_size, duckdb_array_vector_get_child, DuckDbString};
+use libduckdb_sys::{
+    duckdb_array_type_array_size, duckdb_array_vector_get_child, duckdb_validity_row_is_valid, idx_t, DuckDbString,
+};
 
 use super::LogicalTypeHandle;
 use crate::ffi::{
@@ -194,6 +196,48 @@ impl ListVector {
         unsafe {
             duckdb_list_vector_set_size(self.entries.ptr, new_len as u64);
         }
+    }
+
+    /// Convert the list vector to a Vec.
+    pub fn to_vec<T>(&self) -> Vec<Vec<T>>
+    where
+        T: Copy + Default,
+    {
+        let rows = self.len();
+        let child = self.child(rows);
+        let list_data = self.entries.as_slice::<duckdb_list_entry>();
+        let child_data = child.as_slice::<T>();
+        let list_validity = unsafe { duckdb_vector_get_validity(self.entries.ptr) };
+        let child_validity = unsafe { duckdb_vector_get_validity(child.ptr) };
+
+        let mut result = Vec::with_capacity(rows);
+        'outer: for row in 0..rows {
+            if unsafe { !duckdb_validity_row_is_valid(list_validity, row as u64) } {
+                continue; // Push an empty vector for NULL lists
+            } else {
+                let list_entry = list_data[row];
+                if row > 0 && list_entry.offset == 0 {
+                    continue;
+                }
+                if let None = list_entry.offset.checked_add(list_entry.length) {
+                    continue;
+                }
+                let mut row_vec = Vec::new();
+                for child_idx in list_entry.offset..(list_entry.offset + list_entry.length) {
+                    if unsafe { !duckdb_validity_row_is_valid(child_validity, child_idx) } {
+                        row_vec.push(T::default());
+                    } else {
+                        let data = child_data.get(child_idx as usize);
+                        match data {
+                            None => break 'outer,
+                            Some(data) => row_vec.push(*data),
+                        }
+                    }
+                }
+                result.push(row_vec);
+            }
+        }
+        result
     }
 }
 
