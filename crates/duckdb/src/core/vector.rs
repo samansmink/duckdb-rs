@@ -145,6 +145,14 @@ impl From<duckdb_vector> for ListVector {
     }
 }
 
+impl From<&mut FlatVector> for ListVector {
+    fn from(entries: &mut FlatVector) -> Self {
+        Self {
+            entries: FlatVector::from(entries.ptr),
+        }
+    }
+}
+
 impl ListVector {
     /// Returns the number of entries in the list vector.
     pub fn len(&self) -> usize {
